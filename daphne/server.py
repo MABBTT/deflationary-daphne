@@ -32,6 +32,7 @@ import time
 from concurrent.futures import CancelledError
 from functools import partial
 
+from autobahn.websocket.compress import PERMESSAGE_COMPRESSION_EXTENSION as EXTENSIONS
 from twisted.internet import defer, reactor
 from twisted.internet.endpoints import serverFromString
 from twisted.logger import STDLibLogObserver, globalLogBeginner
@@ -54,6 +55,11 @@ class Server:
         request_buffer_size=8192,
         websocket_timeout=86400,
         websocket_connect_timeout=20,
+        websocket_permessage_compression_extensions=[
+            "permessage-deflate",
+            "permessage-bzip2",
+            "permessage-snappy",
+        ],
         ping_interval=20,
         ping_timeout=30,
         root_path="",
@@ -86,6 +92,9 @@ class Server:
         self.websocket_handshake_timeout = websocket_handshake_timeout
         self.websocket_max_message_size = websocket_max_message_size
         self.websocket_max_frame_size = websocket_max_frame_size
+        self.websocket_permessage_compression_extensions = (
+            websocket_permessage_compression_extensions
+        )
         self.application_close_timeout = application_close_timeout
         self.root_path = root_path
         self.verbosity = verbosity
@@ -109,6 +118,7 @@ class Server:
             openHandshakeTimeout=self.websocket_handshake_timeout,
             maxMessagePayloadSize=self.websocket_max_message_size,
             maxFramePayloadSize=self.websocket_max_frame_size,
+            perMessageCompressionAccept=self.accept_permessage_compression_extension,
         )
         if self.verbosity <= 1:
             # Redirect the Twisted log to nowhere
@@ -262,6 +272,21 @@ class Server:
                         v, type(v)
                     )
                 )
+
+    def accept_permessage_compression_extension(self, offers):
+        """
+        Accepts websocket compression extension as required by `autobahn` package.
+        """
+        for offer in offers:
+            for ext in self.websocket_permessage_compression_extensions:
+                if ext in EXTENSIONS and isinstance(offer, EXTENSIONS[ext]["Offer"]):
+                    return EXTENSIONS[ext]["OfferAccept"](offer)
+                elif ext not in EXTENSIONS:
+                    logger.warning(
+                        "Compression extension %s could not be accepted. "
+                        "It is not supported or a dependency is missing.",
+                        ext,
+                    )
 
     ### Utility
 
